@@ -1,0 +1,33 @@
+#Dataset
+Dataset/
+Dataset_Filtered_Sharp/
+dataset_output/
+Dataset_Rejected_Blurry/
+Defect_Dataset_Final/
+YOLO_Dataset/
+# Heavy Outputs and Images
+Eva_Result/
+Ghost_Review/
+Foxconn_SAHI_Comparison/
+#First dataset
+PCB recognition for recycling.coco/
+Main_clean_label_process/
+#Weights
+Hallucination_Autopsy/
+runs/
+Save_model/
+Test_Eva/*.jpg
+Ghost_Free_Labels/
+*.pt
+*.pth
+*.onnx
+#Rand stuff
+venv/
+env/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+Trash_dump/
+Visual_Audit_Output/
+File_anh/

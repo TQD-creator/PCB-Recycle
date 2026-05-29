@@ -1,0 +1,13 @@
+path: C:/Users/Lenovo/Documents/Foxconn/PCB-Detection
+train: train/images
+val: val/images
+
+names:
+  0: capacitor
+  1: resistor
+  2: ic
+  3: diode
+  4: led
+  5: inductor
+  6: connector
+  7: unknown

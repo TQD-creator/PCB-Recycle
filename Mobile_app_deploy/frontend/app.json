@@ -1,0 +1,18 @@
+{
+    "expo": {
+        "name": "PCB Mobile Console",
+        "slug": "pcb-mobile-console",
+        "version": "1.0.0",
+        "orientation": "portrait",
+        "splash": {
+            "backgroundColor": "#121212"
+        },
+        "assetBundlePatterns": ["**/*"],
+        "android": {
+            "package": "com.foxconn.pcbmobile"
+        },
+        "ios": {
+            "bundleIdentifier": "com.foxconn.pcbmobile"
+        }
+    }
+}
