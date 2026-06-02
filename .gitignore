@@ -9,6 +9,7 @@ YOLO_Dataset/
 Eva_Result/
 Ghost_Review/
 Foxconn_SAHI_Comparison/
+Ghost_object/
 #First dataset
 PCB recognition for recycling.coco/
 Main_clean_label_process/
@@ -21,6 +22,8 @@ Ghost_Free_Labels/
 *.pt
 *.pth
 *.onnx
+#Node modules
+Mobile_app_deploy/frontend/node_modules
 #Rand stuff
 venv/
 env/
@@ -31,3 +34,13 @@ __pycache__/
 Trash_dump/
 Visual_Audit_Output/
 File_anh/
+# md files
+CHANGELOG.md
+README.md
+GITHUB_UPDATE_GUIDE.md
+# Git
+push_to_github.ps1
+push_to_github.sh
+repomix-output.xml
+#UN-Remove when repomix
+Mobile_app_deploy/frontend/screens/ScannerScreen.js

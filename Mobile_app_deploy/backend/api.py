@@ -6,6 +6,7 @@ Update API_BASE_URL in the mobile client to the tunnel URL (e.g. https://random-
 """
 
 import asyncio
+import json
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -25,6 +26,7 @@ from ml_pipeline import (
     run_sahi_yolo,
 )
 from services import cleanup_failed_scan, generate_excel, save_uploaded_file
+from warp_engine import flatten_dynamic
 
 router = APIRouter()
 
@@ -55,6 +57,7 @@ class ScanListResponse(BaseModel):
 async def analyze_board(
     file: UploadFile = File(...),
     mode: ScanMode = Form(...),
+    corners: str = Form(None),
 ) -> AnalyzeResponse:
     scan_id = str(uuid4())
     image_path = save_uploaded_file(file)
@@ -65,6 +68,14 @@ async def analyze_board(
     }[mode]
 
     try:
+        if corners:
+            try:
+                parsed_corners = json.loads(corners)
+                if len(parsed_corners) == 4:
+                    await run_in_threadpool(flatten_dynamic, image_path, parsed_corners)
+            except Exception as exc:
+                API_LOGGER.warning("Failed to parse or apply corners: %s", exc)
+
         try:
             await run_in_threadpool(ensure_image_readable, image_path)
         except ValueError:
