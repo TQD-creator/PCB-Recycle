@@ -2,15 +2,15 @@ import React, { useContext, useState } from "react";
 import { ActivityIndicator, Alert, FlatList, Linking, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import axios from "axios";
 import { useFocusEffect } from "@react-navigation/native";
+import * as ImagePicker from "expo-image-picker";
 
 import { BackendConfigContext, buildBaseUrl } from "../BackendConfigContext";
 
 // Use API_BASE_URL for ngrok/playit tunnels (e.g. https://random-id.ngrok-free.app).
 // Leave empty to rely on the Home screen IP field for local Wi-Fi access.
-// If you use a .env file, wire the value into API_BASE_URL before release builds.
 const API_BASE_URL = "";
 
-const HistoryScreen = () => {
+const HistoryScreen = ({ navigation }) => {
     const { backendIp } = useContext(BackendConfigContext);
     const [scanList, setScanList] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -74,6 +74,33 @@ const HistoryScreen = () => {
         }
     };
 
+    // --- PHASE 1 FLYWHEEL ROUTING ---
+    const handleCorrectMistakes = async (scanId) => {
+        Alert.alert(
+            "Select Image", 
+            "Please select the original PCB image from your gallery to edit the AI's bounding boxes.",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Open Gallery",
+                    onPress: async () => {
+                        let result = await ImagePicker.launchImageLibraryAsync({
+                            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                            quality: 1,
+                        });
+
+                        if (!result.canceled) {
+                            navigation.navigate('Editor', { 
+                                imageUri: result.assets[0].uri,
+                                scanId: scanId 
+                            });
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
     return (
         <View style={styles.container}>
             <FlatList
@@ -99,6 +126,8 @@ const HistoryScreen = () => {
                                     </View>
                                 </View>
                             </View>
+                            
+                            {/* Primary Actions */}
                             {isUnified ? (
                                 <TouchableOpacity
                                     style={styles.primaryButton}
@@ -119,6 +148,14 @@ const HistoryScreen = () => {
                                     )}
                                 </TouchableOpacity>
                             )}
+
+                            {/* Flywheel Action */}
+                            <TouchableOpacity
+                                style={styles.correctionButton}
+                                onPress={() => handleCorrectMistakes(item.scan_id)}
+                            >
+                                <Text style={styles.correctionText}>Correct AI Mistakes</Text>
+                            </TouchableOpacity>
                         </View>
                     );
                 }}
@@ -178,6 +215,7 @@ const styles = StyleSheet.create({
         paddingVertical: 12,
         borderRadius: 12,
         alignItems: "center",
+        marginBottom: 8,
     },
     primaryText: {
         color: "#121212",
@@ -190,9 +228,22 @@ const styles = StyleSheet.create({
         paddingVertical: 12,
         borderRadius: 12,
         alignItems: "center",
+        marginBottom: 8,
     },
     secondaryText: {
         color: "#FFFFFF",
+        fontSize: 14,
+        fontFamily: "Georgia",
+        fontWeight: "700",
+    },
+    correctionButton: {
+        backgroundColor: "#FF8A00",
+        paddingVertical: 12,
+        borderRadius: 12,
+        alignItems: "center",
+    },
+    correctionText: {
+        color: "#121212",
         fontSize: 14,
         fontFamily: "Georgia",
         fontWeight: "700",

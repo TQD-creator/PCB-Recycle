@@ -1,0 +1,32 @@
+{
+  "Foxconn_Demo_Board": {
+    "Anchor_Component": {
+      "class_label": "IC",
+      "absolute_x": 500.0,
+      "absolute_y": 500.0
+    },
+    "Expected_Components": {
+      "IC_Phase_1": {
+        "class_label": "IC",
+        "vector_x": 120.0,
+        "vector_y": -80.0,
+        "w": 85.0,
+        "h": 85.0
+      },
+      "Capacitor_Filter_1": {
+        "class_label": "Capacitor",
+        "vector_x": -210.0,
+        "vector_y": 140.0,
+        "w": 40.0,
+        "h": 40.0
+      },
+      "Resistor_Line_1": {
+        "class_label": "Resistor",
+        "vector_x": 50.0,
+        "vector_y": 300.0,
+        "w": 25.0,
+        "h": 60.0
+      }
+    }
+  }
+}

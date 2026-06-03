@@ -9,45 +9,30 @@ import * as ImagePicker from "expo-image-picker";
 
 import { BackendConfigContext, buildBaseUrl } from "../BackendConfigContext";
 
-const API_BASE_URL = "";
-
 const ScannerScreen = () => {
     const cameraRef = useRef(null);
     const isFocused = useIsFocused();
     const { backendIp } = useContext(BackendConfigContext);
     
-    // NEW: Use the modern v17 permissions hook
     const [permission, requestPermission] = useCameraPermissions();
     
     const [isProcessing, setIsProcessing] = useState(false);
-    const [isTorchOn, setIsTorchOn] = useState(false); // Updated for v17
+    const [isTorchOn, setIsTorchOn] = useState(false);
     const [scanMode, setScanMode] = useState("YOLO");
     const [photoData, setPhotoData] = useState(null);
     const [corners, setCorners] = useState([]);
     const [imageLayout, setImageLayout] = useState({ width: 0, height: 0 });
 
-    useEffect(() => {
-        const interceptor = axios.interceptors.response.use(
-            (response) => response,
-            (error) => {
-                if (error?.response?.status >= 500) {
-                    Alert.alert(
-                        "Server Overload",
-                        "Try running Inventory Only to reduce memory usage."
-                    );
-                }
-                return Promise.reject(error);
-            }
-        );
-        return () => axios.interceptors.response.eject(interceptor);
-    }, []);
-
     const appendScanHistory = async (scanId) => {
-        const raw = await AsyncStorage.getItem("scan_history");
-        const history = raw ? JSON.parse(raw) : [];
-        const entry = { scan_id: scanId, timestamp: new Date().toISOString() };
-        const updated = [entry, ...history].slice(0, 50);
-        await AsyncStorage.setItem("scan_history", JSON.stringify(updated));
+        try {
+            const raw = await AsyncStorage.getItem("scan_history");
+            const history = raw ? JSON.parse(raw) : [];
+            const entry = { scan_id: scanId, timestamp: new Date().toISOString() };
+            const updated = [entry, ...history].slice(0, 50);
+            await AsyncStorage.setItem("scan_history", JSON.stringify(updated));
+        } catch (e) {
+            console.error("Failed to save history", e);
+        }
     };
 
     const takePhoto = async () => {
@@ -76,7 +61,6 @@ const ScannerScreen = () => {
         if (isProcessing) return;
         
         try {
-            // No permissions request needed for basic gallery access on modern iOS/Android
             let result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 allowsEditing: false,
@@ -85,7 +69,6 @@ const ScannerScreen = () => {
 
             if (!result.canceled) {
                 setIsProcessing(true);
-                // Run it through the exact same compression so the backend doesn't crash on a 12MB 4K photo
                 const manipulated = await ImageManipulator.manipulateAsync(
                     result.assets[0].uri,
                     [{ resize: { width: 1024 } }],
@@ -119,8 +102,8 @@ const ScannerScreen = () => {
             return;
         }
 
-        // REPLACE THE X's WITH YOUR EXACT IP (The same one that worked in Safari)
-        const baseUrl = "http://172.20.10.13:8000/"; 
+        // Use the IP typed in the Home Screen context. If empty, fallback to the hardcoded local test IP.
+        const activeIp = backendIp ? buildBaseUrl(backendIp) : "http://172.20.10.13:8000";
 
         try {
             setIsProcessing(true);
@@ -134,40 +117,49 @@ const ScannerScreen = () => {
             formData.append("mode", scanMode);
             formData.append("corners", JSON.stringify(corners));
 
-            console.log(`[!] Sending payload to: ${baseUrl}/api/v2/analyze`);
+            // Clean URL to prevent 404 double-slash errors
+            const cleanUrl = `${activeIp}/api/v2/analyze`.replace(/([^:]\/)\/+/g, "$1");
+            console.log("[*] Firing payload to:", cleanUrl);
 
-            // We are using native fetch() instead of axios to bypass the React Native upload bug
-            const response = await fetch(`${baseUrl}/api/v2/analyze`, {
-                method: 'POST',
-                body: formData,
-                // CRITICAL: Do NOT set Content-Type manually here. Fetch handles the boundary automatically.
-                headers: {
-                    'Accept': 'application/json'
-                }
+            // AXIOS REQUEST
+            const response = await axios.post(cleanUrl, formData, {
+                headers: { 
+                    "Content-Type": "multipart/form-data",
+                    "Accept": "application/json"
+                },
+                timeout: 15000 // Kills the request after 15 seconds so it doesn't hang forever
             });
 
-            if (!response.ok) {
-                throw new Error(`Server returned status: ${response.status}`);
+            // AXIOS SUCCESS PATH (Status 200-299)
+            console.log("[+] Server Response:", response.data);
+            const scanId = response.data?.scan_id;
+            if (scanId) {
+                await appendScanHistory(scanId);
             }
-
-            const responseData = await response.json();
-
-            const scanId = responseData?.scan_id;
-            await appendScanHistory(scanId);
+            
             Alert.alert("Success", "Report is ready in History.");
-
             setPhotoData(null);
             setCorners([]);
-            
+
         } catch (error) {
-            console.error("[!] Fetch Error: ", error);
-            Alert.alert("Upload Failed", `Could not reach server: ${error.message}`);
+            // AXIOS ERROR PATH (Network fail, 404, 500, etc.)
+            console.error("[-] API Error:", error);
+            
+            if (error.response) {
+                // The server received the request but rejected it (e.g., 404, 422, 500)
+                Alert.alert(`Server Error (${error.response.status})`, JSON.stringify(error.response.data));
+            } else if (error.request) {
+                // The request never reached the server (Timeout, bad IP, Firewall)
+                Alert.alert("Network Timeout", `Could not reach ${activeIp}. Check your laptop IP and Windows Firewall.`);
+            } else {
+                // Something else broke in React Native
+                Alert.alert("Error", error.message);
+            }
         } finally {
             setIsProcessing(false);
         }
     };
 
-    // NEW: Handle loading state for permissions
     if (!permission) {
         return (
             <View style={styles.loadingWrap}>
@@ -176,7 +168,6 @@ const ScannerScreen = () => {
         );
     }
 
-    // NEW: Handle denied permissions cleanly with a button to ask again
     if (!permission.granted) {
         return (
             <View style={styles.loadingWrap}>
@@ -342,231 +333,42 @@ const ScannerScreen = () => {
 };
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: "#121212",
-    },
-    camera: {
-        flex: 1,
-    },
-    overlay: {
-        flex: 1,
-        justifyContent: "center",
-        alignItems: "center",
-    },
-    gridBox: {
-        width: "70%",
-        height: "50%",
-        borderWidth: 2,
-        borderColor: "rgba(0, 230, 118, 0.8)",
-        borderRadius: 14,
-        justifyContent: "center",
-        alignItems: "center",
-    },
-    gridLineHorizontal: {
-        position: "absolute",
-        width: "100%",
-        height: 1,
-        backgroundColor: "rgba(255, 255, 255, 0.4)",
-    },
-    gridLineVertical: {
-        position: "absolute",
-        width: 1,
-        height: "100%",
-        backgroundColor: "rgba(255, 255, 255, 0.4)",
-    },
-    crosshairRow: {
-        position: "absolute",
-        top: "50%",
-        left: 0,
-        right: 0,
-        alignItems: "center",
-    },
-    crosshair: {
-        width: 12,
-        height: 12,
-        borderRadius: 6,
-        borderWidth: 2,
-        borderColor: "#2979FF",
-        backgroundColor: "rgba(41, 121, 255, 0.2)",
-    },
-    controls: {
-        padding: 20,
-        backgroundColor: "#0B0B0B",
-    },
-    reviewWrap: {
-        flex: 1,
-        backgroundColor: "#121212",
-        padding: 12,
-    },
-    reviewImageWrap: {
-        flex: 1,
-        borderRadius: 16,
-        overflow: "hidden",
-        backgroundColor: "#0B0B0B",
-        borderWidth: 1,
-        borderColor: "#1F1F1F",
-    },
-    reviewImage: {
-        width: "100%",
-        height: "100%",
-    },
-    cornerMarker: {
-        position: "absolute",
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        backgroundColor: "rgba(0, 230, 118, 0.85)",
-        borderWidth: 2,
-        borderColor: "#0B0B0B",
-        alignItems: "center",
-        justifyContent: "center",
-    },
-    cornerLabel: {
-        color: "#121212",
-        fontSize: 12,
-        fontFamily: "Courier New",
-        fontWeight: "700",
-    },
-    reviewControls: {
-        padding: 20,
-        backgroundColor: "#0B0B0B",
-    },
-    reviewButtonRow: {
-        flexDirection: "row",
-        gap: 12,
-    },
-    retakeButton: {
-        flex: 1,
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: "#2B2B2B",
-        backgroundColor: "#141414",
-        paddingVertical: 14,
-        alignItems: "center",
-    },
-    retakeText: {
-        color: "#FFFFFF",
-        fontSize: 14,
-        fontFamily: "Georgia",
-        fontWeight: "700",
-    },
-    analyzeButton: {
-        flex: 1,
-        borderRadius: 16,
-        backgroundColor: "#00E676",
-        paddingVertical: 14,
-        alignItems: "center",
-    },
-    analyzeButtonDisabled: {
-        opacity: 0.5,
-    },
-    analyzeText: {
-        color: "#121212",
-        fontSize: 14,
-        fontFamily: "Georgia",
-        fontWeight: "700",
-    },
-    reviewHint: {
-        color: "#AFAFAF",
-        fontSize: 12,
-        textAlign: "center",
-        marginBottom: 12,
-        fontFamily: "Courier New",
-    },
-    modeRow: {
-        gap: 10,
-        marginBottom: 12,
-        flexDirection: "row",
-        justifyContent: "space-between",
-    },
-    modeButton: {
-        flex: 1,
-        borderRadius: 16,
-        paddingVertical: 12,
-        paddingHorizontal: 4,
-        borderWidth: 1,
-        borderColor: "#2B2B2B",
-        backgroundColor: "#121212",
-        alignItems: "center",
-        justifyContent: "center",
-    },
-    modeButtonActive: {
-        borderColor: "#00E676",
-        backgroundColor: "rgba(0, 230, 118, 0.12)",
-    },
-    modeText: {
-        color: "#FFFFFF",
-        fontSize: 10,
-        fontFamily: "Courier New",
-        textAlign: "center",
-    },
-    flashButton: {
-        alignSelf: "center",
-        marginBottom: 12,
-        paddingVertical: 8,
-        paddingHorizontal: 18,
-        borderRadius: 18,
-        borderWidth: 1,
-        borderColor: "#2B2B2B",
-        backgroundColor: "#151515",
-    },
-    flashText: {
-        color: "#FFFFFF",
-        fontSize: 12,
-        fontFamily: "Courier New",
-        letterSpacing: 0.6,
-    },
-    captureButton: {
-        backgroundColor: "#00E676",
-        borderRadius: 24,
-        paddingVertical: 16,
-        alignItems: "center",
-    },
-    captureButtonDisabled: {
-        opacity: 0.6,
-    },
-    captureText: {
-        color: "#121212",
-        fontSize: 18,
-        fontFamily: "Georgia",
-        fontWeight: "700",
-    },
-    hint: {
-        color: "#AFAFAF",
-        fontSize: 12,
-        marginTop: 12,
-        textAlign: "center",
-        fontFamily: "Courier New",
-    },
-    loadingWrap: {
-        flex: 1,
-        backgroundColor: "#121212",
-        alignItems: "center",
-        justifyContent: "center",
-    },
-    processingOverlay: {
-        position: "absolute",
-        top: 0,
-        right: 0,
-        bottom: 0,
-        left: 0,
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: "rgba(0, 0, 0, 0.8)",
-    },
-    processingText: {
-        color: "#FFFFFF",
-        fontSize: 12,
-        marginTop: 12,
-        textAlign: "center",
-        paddingHorizontal: 24,
-        fontFamily: "Courier New",
-    },
-    errorText: {
-        color: "#FFFFFF",
-        fontSize: 16,
-    },
+    container: { flex: 1, backgroundColor: "#121212" },
+    camera: { flex: 1 },
+    overlay: { flex: 1, justifyContent: "center", alignItems: "center" },
+    gridBox: { width: "70%", height: "50%", borderWidth: 2, borderColor: "rgba(0, 230, 118, 0.8)", borderRadius: 14, justifyContent: "center", alignItems: "center" },
+    gridLineHorizontal: { position: "absolute", width: "100%", height: 1, backgroundColor: "rgba(255, 255, 255, 0.4)" },
+    gridLineVertical: { position: "absolute", width: 1, height: "100%", backgroundColor: "rgba(255, 255, 255, 0.4)" },
+    crosshairRow: { position: "absolute", top: "50%", left: 0, right: 0, alignItems: "center" },
+    crosshair: { width: 12, height: 12, borderRadius: 6, borderWidth: 2, borderColor: "#2979FF", backgroundColor: "rgba(41, 121, 255, 0.2)" },
+    controls: { padding: 20, backgroundColor: "#0B0B0B" },
+    reviewWrap: { flex: 1, backgroundColor: "#121212", padding: 12 },
+    reviewImageWrap: { flex: 1, borderRadius: 16, overflow: "hidden", backgroundColor: "#0B0B0B", borderWidth: 1, borderColor: "#1F1F1F" },
+    reviewImage: { width: "100%", height: "100%" },
+    cornerMarker: { position: "absolute", width: 24, height: 24, borderRadius: 12, backgroundColor: "rgba(0, 230, 118, 0.85)", borderWidth: 2, borderColor: "#0B0B0B", alignItems: "center", justifyContent: "center" },
+    cornerLabel: { color: "#121212", fontSize: 12, fontFamily: "Courier New", fontWeight: "700" },
+    reviewControls: { padding: 20, backgroundColor: "#0B0B0B" },
+    reviewButtonRow: { flexDirection: "row", gap: 12 },
+    retakeButton: { flex: 1, borderRadius: 16, borderWidth: 1, borderColor: "#2B2B2B", backgroundColor: "#141414", paddingVertical: 14, alignItems: "center" },
+    retakeText: { color: "#FFFFFF", fontSize: 14, fontFamily: "Georgia", fontWeight: "700" },
+    analyzeButton: { flex: 1, borderRadius: 16, backgroundColor: "#00E676", paddingVertical: 14, alignItems: "center" },
+    analyzeButtonDisabled: { opacity: 0.5 },
+    analyzeText: { color: "#121212", fontSize: 14, fontFamily: "Georgia", fontWeight: "700" },
+    reviewHint: { color: "#AFAFAF", fontSize: 12, textAlign: "center", marginBottom: 12, fontFamily: "Courier New" },
+    modeRow: { gap: 10, marginBottom: 12, flexDirection: "row", justifyContent: "space-between" },
+    modeButton: { flex: 1, borderRadius: 16, paddingVertical: 12, paddingHorizontal: 4, borderWidth: 1, borderColor: "#2B2B2B", backgroundColor: "#121212", alignItems: "center", justifyContent: "center" },
+    modeButtonActive: { borderColor: "#00E676", backgroundColor: "rgba(0, 230, 118, 0.12)" },
+    modeText: { color: "#FFFFFF", fontSize: 10, fontFamily: "Courier New", textAlign: "center" },
+    flashButton: { alignSelf: "center", marginBottom: 12, paddingVertical: 8, paddingHorizontal: 18, borderRadius: 18, borderWidth: 1, borderColor: "#2B2B2B", backgroundColor: "#151515" },
+    flashText: { color: "#FFFFFF", fontSize: 12, fontFamily: "Courier New", letterSpacing: 0.6 },
+    captureButton: { backgroundColor: "#00E676", borderRadius: 24, paddingVertical: 16, alignItems: "center" },
+    captureButtonDisabled: { opacity: 0.6 },
+    captureText: { color: "#121212", fontSize: 18, fontFamily: "Georgia", fontWeight: "700" },
+    hint: { color: "#AFAFAF", fontSize: 12, marginTop: 12, textAlign: "center", fontFamily: "Courier New" },
+    loadingWrap: { flex: 1, backgroundColor: "#121212", alignItems: "center", justifyContent: "center" },
+    processingOverlay: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0, 0, 0, 0.8)" },
+    processingText: { color: "#FFFFFF", fontSize: 12, marginTop: 12, textAlign: "center", paddingHorizontal: 24, fontFamily: "Courier New" },
+    errorText: { color: "#FFFFFF", fontSize: 16 },
 });
 
 export default ScannerScreen;

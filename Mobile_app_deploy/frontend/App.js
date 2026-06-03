@@ -8,6 +8,7 @@ import { BackendConfigContext } from "./BackendConfigContext";
 import HomeScreen from "./screens/HomeScreen";
 import ScannerScreen from "./screens/ScannerScreen";
 import HistoryScreen from "./screens/HistoryScreen";
+import EditorScreen from "./screens/EditorScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -59,6 +60,7 @@ const App = () => {
                     <Stack.Screen name="Home" component={HomeScreen} options={{ title: "PCB Ops" }} />
                     <Stack.Screen name="Scanner" component={ScannerScreen} options={{ title: "Scanner" }} />
                     <Stack.Screen name="History" component={HistoryScreen} options={{ title: "Audit History" }} />
+                    <Stack.Screen name="Editor" component={EditorScreen} options={{ title: "Flywheel Correction" }} />
                 </Stack.Navigator>
             </NavigationContainer>
         </BackendConfigContext.Provider>
