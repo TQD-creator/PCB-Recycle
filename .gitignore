@@ -24,6 +24,9 @@ Ghost_Free_Labels/
 *.onnx
 #Node modules
 Mobile_app_deploy/frontend/node_modules
+#Backend
+Mobile_app_deploy/backend/dataset_staging/
+Mobile_app_deploy/backend/captured_boards/
 #Rand stuff
 venv/
 env/
@@ -38,6 +41,7 @@ File_anh/
 CHANGELOG.md
 README.md
 GITHUB_UPDATE_GUIDE.md
+To_Do_Plan.md
 # Git
 push_to_github.ps1
 push_to_github.sh
