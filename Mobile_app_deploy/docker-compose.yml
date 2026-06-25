@@ -1,0 +1,57 @@
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: pcb-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pcb-api
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      RESULT_BACKEND_URL: redis://redis:6379/1
+      API_BASE_URL: http://localhost:8000
+      WEIGHTS_YOLO_PATH: /app/runtime/assets/weights/yolov8_factory_best.pt
+      WEIGHTS_MOBILENET_PATH: /app/runtime/assets/weights/mobilenet_best.pt
+      FAISS_INDEX_PATH: /app/runtime/assets/database/golden_anchors.index
+      FAISS_LABELS_PATH: /app/runtime/assets/database/anchor_labels.npy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./backend/runtime:/app/runtime
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pcb-worker
+    command: celery -A celery_worker.celery_app worker --loglevel=INFO --concurrency=2
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      RESULT_BACKEND_URL: redis://redis:6379/1
+      API_BASE_URL: http://localhost:8000
+      WEIGHTS_YOLO_PATH: /app/runtime/assets/weights/yolov8_factory_best.pt
+      WEIGHTS_MOBILENET_PATH: /app/runtime/assets/weights/mobilenet_best.pt
+      FAISS_INDEX_PATH: /app/runtime/assets/database/golden_anchors.index
+      FAISS_LABELS_PATH: /app/runtime/assets/database/anchor_labels.npy
+    volumes:
+      - ./backend:/app
+      - ./backend/runtime:/app/runtime
+    depends_on:
+      redis:
+        condition: service_healthy

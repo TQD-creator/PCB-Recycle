@@ -2,15 +2,14 @@ import React, { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { NavigationContainer } from "@react-navigation/native";
-import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 
 import { BackendConfigContext } from "./BackendConfigContext";
-import HomeScreen from "./screens/HomeScreen";
 import ScannerScreen from "./screens/ScannerScreen";
 import HistoryScreen from "./screens/HistoryScreen";
-import EditorScreen from "./screens/EditorScreen";
+import AnomalyQueueScreen from "./screens/AnomalyQueueScreen";
 
-const Stack = createNativeStackNavigator();
+const Tab = createBottomTabNavigator();
 
 const App = () => {
     const [backendIp, setBackendIp] = useState("");
@@ -50,18 +49,20 @@ const App = () => {
     return (
         <BackendConfigContext.Provider value={contextValue}>
             <NavigationContainer>
-                <Stack.Navigator
+                <Tab.Navigator
                     screenOptions={{
-                        headerStyle: { backgroundColor: "#0B0B0B" },
+                        headerStyle: { backgroundColor: "#101419" },
                         headerTintColor: "#FFFFFF",
-                        headerTitleStyle: { fontFamily: "Georgia", fontWeight: "700" },
+                        headerTitleStyle: { fontWeight: "700" },
+                        tabBarStyle: { backgroundColor: "#11161C", borderTopColor: "#1D2834" },
+                        tabBarActiveTintColor: "#10B981",
+                        tabBarInactiveTintColor: "#8FA3B8",
                     }}
                 >
-                    <Stack.Screen name="Home" component={HomeScreen} options={{ title: "PCB Ops" }} />
-                    <Stack.Screen name="Scanner" component={ScannerScreen} options={{ title: "Scanner" }} />
-                    <Stack.Screen name="History" component={HistoryScreen} options={{ title: "Audit History" }} />
-                    <Stack.Screen name="Editor" component={EditorScreen} options={{ title: "Flywheel Correction" }} />
-                </Stack.Navigator>
+                    <Tab.Screen name="Scanner" component={ScannerScreen} options={{ title: "Scanner" }} />
+                    <Tab.Screen name="Inventory" component={HistoryScreen} options={{ title: "Inventory Dashboard" }} />
+                    <Tab.Screen name="Triage" component={AnomalyQueueScreen} options={{ title: "Anomaly Triage" }} />
+                </Tab.Navigator>
             </NavigationContainer>
         </BackendConfigContext.Provider>
     );

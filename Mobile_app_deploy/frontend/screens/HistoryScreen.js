@@ -1,258 +1,130 @@
-import React, { useContext, useState } from "react";
-import { ActivityIndicator, Alert, FlatList, Linking, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import axios from "axios";
-import { useFocusEffect } from "@react-navigation/native";
-import * as ImagePicker from "expo-image-picker";
+import React, { useEffect, useMemo, useState } from "react";
+import { Image, ScrollView, StyleSheet, Text, View } from "react-native";
+import Svg, { Rect } from "react-native-svg";
 
-import { BackendConfigContext, buildBaseUrl } from "../BackendConfigContext";
+import { useScanStore } from "../store/useScanStore";
 
-// Use API_BASE_URL for ngrok/playit tunnels (e.g. https://random-id.ngrok-free.app).
-// Leave empty to rely on the Home screen IP field for local Wi-Fi access.
-const API_BASE_URL = "";
+const InventoryDashboardScreen = () => {
+    const { report, imageUrl } = useScanStore();
+    const [sourceSize, setSourceSize] = useState({ width: 1, height: 1 });
+    const [canvasSize, setCanvasSize] = useState({ width: 1, height: 1 });
 
-const HistoryScreen = ({ navigation }) => {
-    const { backendIp } = useContext(BackendConfigContext);
-    const [scanList, setScanList] = useState([]);
-    const [isLoading, setIsLoading] = useState(false);
-    const [actionId, setActionId] = useState(null);
-
-    const getBaseUrl = () => (backendIp ? buildBaseUrl(backendIp) : API_BASE_URL);
-
-    const loadScans = async () => {
-        const baseUrl = getBaseUrl();
-        if (!baseUrl) {
-            setScanList([]);
+    useEffect(() => {
+        if (!imageUrl) {
             return;
         }
-
-        setIsLoading(true);
-        try {
-            const response = await axios.get(`${baseUrl}/api/v2/scans`);
-            setScanList(response.data?.scans ?? []);
-        } catch (error) {
-            Alert.alert("Load Failed", "Could not fetch scan history.");
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    useFocusEffect(
-        React.useCallback(() => {
-            loadScans();
-        }, [backendIp])
-    );
-
-    const handleDownload = async (scanId) => {
-        const baseUrl = getBaseUrl();
-        if (!baseUrl) {
-            Alert.alert("Missing API", "Set the backend IP on Home or API_BASE_URL for tunnels.");
-            return;
-        }
-
-        await Linking.openURL(`${baseUrl}/api/v2/download/${scanId}`);
-    };
-
-    const handleUpgrade = async (scanId) => {
-        const baseUrl = getBaseUrl();
-        if (!baseUrl) {
-            Alert.alert("Missing API", "Set the backend IP on Home or API_BASE_URL for tunnels.");
-            return;
-        }
-
-        setActionId(scanId);
-        try {
-            const response = await axios.post(`${baseUrl}/api/v2/upgrade/${scanId}`);
-            const downloadUrl = response.data?.download_url;
-            if (downloadUrl) {
-                await Linking.openURL(`${baseUrl}${downloadUrl}`);
-            }
-            await loadScans();
-        } catch (error) {
-            Alert.alert("Upgrade Failed", "Could not upgrade scan to unified.");
-        } finally {
-            setActionId(null);
-        }
-    };
-
-    // --- PHASE 1 FLYWHEEL ROUTING ---
-    const handleCorrectMistakes = async (scanId) => {
-        Alert.alert(
-            "Select Image", 
-            "Please select the original PCB image from your gallery to edit the AI's bounding boxes.",
-            [
-                { text: "Cancel", style: "cancel" },
-                {
-                    text: "Open Gallery",
-                    onPress: async () => {
-                        let result = await ImagePicker.launchImageLibraryAsync({
-                            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                            quality: 1,
-                        });
-
-                        if (!result.canceled) {
-                            navigation.navigate('Editor', { 
-                                imageUri: result.assets[0].uri,
-                                scanId: scanId 
-                            });
-                        }
-                    }
-                }
-            ]
+        Image.getSize(
+            imageUrl,
+            (width, height) => setSourceSize({ width, height }),
+            () => setSourceSize({ width: 1, height: 1 })
         );
-    };
+    }, [imageUrl]);
+
+    const counts = useMemo(() => {
+        if (!report?.verified_counts) {
+            return [];
+        }
+        return Object.entries(report.verified_counts).map(([name, value]) => ({ name, value }));
+    }, [report]);
+
+    const overlayItems = useMemo(() => {
+        if (!report) {
+            return [];
+        }
+        return [
+            ...report.verified_components.map((item) => ({ color: "#16A34A", item })),
+            ...report.anomaly_queue.map((item) => ({ color: "#DC2626", item })),
+        ];
+    }, [report]);
+
+    const xScale = canvasSize.width / sourceSize.width;
+    const yScale = canvasSize.height / sourceSize.height;
 
     return (
-        <View style={styles.container}>
-            <FlatList
-                data={scanList}
-                keyExtractor={(item) => item.scan_id}
-                contentContainerStyle={styles.listContent}
-                ListEmptyComponent={
-                    <Text style={styles.emptyText}>
-                        {isLoading ? "Loading scans..." : "No scans yet."}
-                    </Text>
-                }
-                renderItem={({ item }) => {
-                    const date = new Date(item.timestamp);
-                    const isUnified = item.scan_mode === "UNIFIED";
-                    return (
-                        <View style={styles.card}>
-                            <View style={styles.cardHeader}>
-                                <Text style={styles.scanId}>{item.scan_id}</Text>
-                                <View style={styles.metaRow}>
-                                    <Text style={styles.dateText}>{date.toLocaleString()}</Text>
-                                    <View style={styles.modeBadge}>
-                                        <Text style={styles.modeText}>{item.scan_mode}</Text>
-                                    </View>
-                                </View>
-                            </View>
-                            
-                            {/* Primary Actions */}
-                            {isUnified ? (
-                                <TouchableOpacity
-                                    style={styles.primaryButton}
-                                    onPress={() => handleDownload(item.scan_id)}
-                                >
-                                    <Text style={styles.primaryText}>Download Report</Text>
-                                </TouchableOpacity>
-                            ) : (
-                                <TouchableOpacity
-                                    style={styles.secondaryButton}
-                                    onPress={() => handleUpgrade(item.scan_id)}
-                                    disabled={actionId === item.scan_id}
-                                >
-                                    {actionId === item.scan_id ? (
-                                        <ActivityIndicator color="#121212" />
-                                    ) : (
-                                        <Text style={styles.secondaryText}>Upgrade to Unified</Text>
-                                    )}
-                                </TouchableOpacity>
-                            )}
-
-                            {/* Flywheel Action */}
-                            <TouchableOpacity
-                                style={styles.correctionButton}
-                                onPress={() => handleCorrectMistakes(item.scan_id)}
-                            >
-                                <Text style={styles.correctionText}>Correct AI Mistakes</Text>
-                            </TouchableOpacity>
+        <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+            <View style={styles.card}>
+                <Text style={styles.title}>Verified Component Counts</Text>
+                {counts.length === 0 ? (
+                    <Text style={styles.empty}>No report loaded yet. Run a scan from Scanner tab.</Text>
+                ) : (
+                    counts.map((entry) => (
+                        <View key={entry.name} style={styles.row}>
+                            <Text style={styles.key}>{entry.name.toUpperCase()}</Text>
+                            <Text style={styles.value}>{entry.value}</Text>
                         </View>
-                    );
-                }}
-            />
-        </View>
+                    ))
+                )}
+            </View>
+
+            <View style={styles.card}>
+                <Text style={styles.title}>Board Overlay Preview</Text>
+                {!imageUrl ? (
+                    <Text style={styles.empty}>Completed scan image will appear here.</Text>
+                ) : (
+                    <View
+                        style={styles.imageWrap}
+                        onLayout={(event) => {
+                            const { width, height } = event.nativeEvent.layout;
+                            setCanvasSize({ width, height });
+                        }}
+                    >
+                        <Image source={{ uri: imageUrl }} style={styles.image} resizeMode="contain" />
+                        <Svg style={StyleSheet.absoluteFill}>
+                            {overlayItems.map((entry, idx) => {
+                                const [x1, y1, x2, y2] = entry.item.bbox;
+                                return (
+                                    <Rect
+                                        key={`${entry.item.status}_${idx}`}
+                                        x={x1 * xScale}
+                                        y={y1 * yScale}
+                                        width={(x2 - x1) * xScale}
+                                        height={(y2 - y1) * yScale}
+                                        stroke={entry.color}
+                                        strokeWidth={2}
+                                        fill="transparent"
+                                    />
+                                );
+                            })}
+                        </Svg>
+                    </View>
+                )}
+            </View>
+        </ScrollView>
     );
 };
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: "#121212",
-    },
-    listContent: {
-        padding: 20,
-    },
+    container: { flex: 1, backgroundColor: "#0A1118" },
+    content: { padding: 12, gap: 12 },
     card: {
-        backgroundColor: "#1B1B1B",
-        borderRadius: 16,
-        padding: 16,
-        marginBottom: 16,
-    },
-    cardHeader: {
-        marginBottom: 12,
-    },
-    scanId: {
-        color: "#FFFFFF",
-        fontSize: 14,
-        fontFamily: "Courier New",
-        marginBottom: 6,
-    },
-    metaRow: {
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-    },
-    dateText: {
-        color: "#7E7E7E",
-        fontSize: 12,
-    },
-    modeBadge: {
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        borderRadius: 10,
+        backgroundColor: "#111827",
+        borderRadius: 14,
         borderWidth: 1,
-        borderColor: "#2C2C2C",
-        backgroundColor: "#141414",
+        borderColor: "#1F2937",
+        padding: 14,
     },
-    modeText: {
-        color: "#FFFFFF",
-        fontSize: 10,
-        fontFamily: "Courier New",
-        letterSpacing: 0.6,
-    },
-    primaryButton: {
-        backgroundColor: "#00E676",
-        paddingVertical: 12,
-        borderRadius: 12,
+    title: { color: "#F8FAFC", fontWeight: "800", fontSize: 16, marginBottom: 12 },
+    empty: { color: "#94A3B8" },
+    row: {
+        flexDirection: "row",
+        justifyContent: "space-between",
         alignItems: "center",
-        marginBottom: 8,
+        paddingVertical: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: "#1F2937",
     },
-    primaryText: {
-        color: "#121212",
-        fontSize: 14,
-        fontFamily: "Georgia",
-        fontWeight: "700",
-    },
-    secondaryButton: {
-        backgroundColor: "#2979FF",
-        paddingVertical: 12,
+    key: { color: "#BFDBFE", fontWeight: "700" },
+    value: { color: "#10B981", fontWeight: "800", fontSize: 16 },
+    imageWrap: {
         borderRadius: 12,
-        alignItems: "center",
-        marginBottom: 8,
+        overflow: "hidden",
+        borderWidth: 1,
+        borderColor: "#223243",
+        backgroundColor: "#020617",
+        width: "100%",
+        aspectRatio: 1,
     },
-    secondaryText: {
-        color: "#FFFFFF",
-        fontSize: 14,
-        fontFamily: "Georgia",
-        fontWeight: "700",
-    },
-    correctionButton: {
-        backgroundColor: "#FF8A00",
-        paddingVertical: 12,
-        borderRadius: 12,
-        alignItems: "center",
-    },
-    correctionText: {
-        color: "#121212",
-        fontSize: 14,
-        fontFamily: "Georgia",
-        fontWeight: "700",
-    },
-    emptyText: {
-        color: "#6F6F6F",
-        textAlign: "center",
-        marginTop: 40,
-    },
+    image: { width: "100%", height: "100%" },
 });
 
-export default HistoryScreen;
+export default InventoryDashboardScreen;

@@ -18,7 +18,8 @@ from sahi.predict import get_sliced_prediction
 
 # --- Paths and Setup ---
 MODEL_DIR = Path(r"C:\Users\Lenovo\Documents\Foxconn\PCB-Detection\SAVE_model")
-YOLO_WEIGHTS = MODEL_DIR / "best_NoConnector_20260526_2158.pt"
+LEGACY_WEIGHTS = MODEL_DIR / "best_NoConnector_20260526_2158.pt"
+PRODUCTION_WEIGHTS = MODEL_DIR / "production_master.pt" # The Watchdog Target
 TEMPLATES_PATH = MODEL_DIR.parent / "golden_templates.json"
 
 _MODEL_LOCK = Lock()
@@ -35,33 +36,45 @@ WARP_LOGGER = logging.getLogger("WARP_ENGINE")
 NORMALIZER_LOGGER = logging.getLogger("NORMALIZER")
 
 
-def load_models() -> None:
-    """Load SAHI YOLO model into memory once per server lifecycle."""
+def load_models(force_reload: bool = False) -> None:
+    """Loads or Hot-Swaps the SAHI YOLO model safely in VRAM."""
     global _MODEL_SAHI
 
-    if _MODEL_SAHI is not None:
+    if _MODEL_SAHI is not None and not force_reload:
         return
 
     with _MODEL_LOCK:
-        if _MODEL_SAHI is not None:
+        if _MODEL_SAHI is not None and not force_reload:
             return
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         device_name = "cuda:0" if device.type == "cuda" else "cpu"
 
-        SAHI_LOGGER.info("Loading YOLOv8 Model via SAHI wrapper on %s...", device_name)
+        # --- THE HOT-SWAP MEMORY FLUSH ---
+        if force_reload and _MODEL_SAHI is not None:
+            SAHI_LOGGER.warning("HOT-SWAP INITIATED: Flushing old AI brain from VRAM...")
+            del _MODEL_SAHI
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+        # Check if the Watchdog has created a production master yet
+        target_weights = PRODUCTION_WEIGHTS if PRODUCTION_WEIGHTS.exists() else LEGACY_WEIGHTS
+
+        SAHI_LOGGER.info("Loading YOLOv8 Model via SAHI wrapper on %s from %s", device_name, target_weights.name)
         sahi_model = AutoDetectionModel.from_pretrained(
             model_type="yolov8",
-            model_path=str(YOLO_WEIGHTS),
+            model_path=str(target_weights),
             confidence_threshold=0.15,
             device=device_name,
         )
 
         _MODEL_SAHI = sahi_model
+        if force_reload:
+            SAHI_LOGGER.info("[+] RAM Hot-Swap Complete. New intelligence is online.")
 
 
 def ensure_image_readable(image_path: str) -> None:
-    """Validate that OpenCV can decode the uploaded image bytes."""
     image = cv2.imread(image_path)
     if image is None:
         raise ValueError("Image unreadable")
@@ -69,18 +82,12 @@ def ensure_image_readable(image_path: str) -> None:
 
 
 def flatten_pcb_image(image_path: str, relative_corners: List[Dict[str, float]], target_size: int = 1000) -> None:
-    """
-    Transforms a skewed smartphone photo into a normalized 1000x1000 square image
-    using relative touch coordinates submitted from the React Native screen interface.
-    """
     WARP_LOGGER.info("Executing 4-point perspective alignment for: %s", image_path)
     img = cv2.imread(image_path)
     if img is None:
         raise ValueError("Cannot read image for perspective warp transformation.")
         
     img_h, img_w = img.shape[:2]
-
-    # Convert normalized screen ratios (0.0 to 1.0) into exact canvas coordinates
     src_pts = []
     for corner in relative_corners:
         abs_x = int(corner['x'] * img_w)
@@ -88,8 +95,6 @@ def flatten_pcb_image(image_path: str, relative_corners: List[Dict[str, float]],
         src_pts.append([abs_x, abs_y])
         
     source_corners = np.float32(src_pts)
-
-    # Establish target projection layout (1000x1000 canvas boundary limits)
     dest_corners = np.float32([
         [0, 0], 
         [target_size - 1, 0], 
@@ -97,17 +102,14 @@ def flatten_pcb_image(image_path: str, relative_corners: List[Dict[str, float]],
         [0, target_size - 1]
     ])
 
-    # Execute geometric mapping operations
     matrix = cv2.getPerspectiveTransform(source_corners, dest_corners)
     flattened_img = cv2.warpPerspective(img, matrix, (target_size, target_size))
 
-    # Overwrite source disk file layout with perfectly flat image copy
     cv2.imwrite(image_path, flattened_img)
     WARP_LOGGER.info("Image mapping completed. Normalized workspace updated.")
 
 
 def ensure_golden_templates_exist() -> None:
-    """Creates a baseline mock golden template dictionary fallback if the file is missing."""
     if not TEMPLATES_PATH.exists():
         fallback_data = {
             "Foxconn_Demo_Board": {
@@ -129,13 +131,11 @@ def ensure_golden_templates_exist() -> None:
 
 
 def run_sahi_yolo(image_path: str, corners_json: str | None = None) -> List[Dict[str, Any]]:
-    """Applies perspective warping if coordinates exist, then generates window-sliced inferences."""
-    load_models()
+    load_models(force_reload=False) # Normal scans do not force a reload
 
     if _MODEL_SAHI is None:
         raise RuntimeError("SAHI wrapper instance validation failure.")
 
-    # Execute dynamic perspective normalization if corners coordinates exist
     if corners_json:
         try:
             parsed_corners = json.loads(corners_json)
@@ -185,12 +185,8 @@ def run_sahi_yolo(image_path: str, corners_json: str | None = None) -> List[Dict
 def normalize_ai_output(
     scan_id: str,
     yolo_results: Sequence[Dict[str, Any]] | None,
-    mobilenet_results: Sequence[Dict[str, Any]] | None = None, # Left intact for signature safety
+    mobilenet_results: Sequence[Dict[str, Any]] | None = None, 
 ) -> List[Dict[str, Any]]:
-    """
-    Core Logic Engine. Compares YOLO live detections against the Anchor-Based
-    Golden Template file framework via strict Euclidean vector math.
-    """
     normalized: List[Dict[str, Any]] = []
     ensure_golden_templates_exist()
 
@@ -202,7 +198,6 @@ def normalize_ai_output(
         NORMALIZER_LOGGER.error("Failed reading JSON profile data templates: %s. Using naive schema pass.", str(e))
         template_profile = None
 
-    # Fallback to direct mapping if no golden metadata profiles exist on the host system
     if not template_profile or not yolo_results:
         for detection in yolo_results or []:
             normalized.append({
@@ -220,35 +215,29 @@ def normalize_ai_output(
             })
         return normalized
 
-    # --- TOPOLOGY ENGINE ALGORITHMIC EVALUATION ---
     anchor_cfg = template_profile["Anchor_Component"]
     expected_components = template_profile["Expected_Components"]
 
-    # Step 1: Find the target reference layout Anchor point from the live detections pool
     live_anchor_x, live_anchor_y = None, None
     best_anchor_dist = float('inf')
 
     for item in yolo_results:
         if item["label"] == anchor_cfg["class_label"]:
-            # Match item closest to expected absolute layout blueprint center metrics
             dist = math.sqrt((item["x_center"] - anchor_cfg["absolute_x"])**2 + (item["y_center"] - anchor_cfg["absolute_y"])**2)
             if dist < best_anchor_dist:
                 best_anchor_dist = dist
                 live_anchor_x = item["x_center"]
                 live_anchor_y = item["y_center"]
 
-    # Fallback to the hardcoded coordinate configuration map if layout anchor point cannot be isolated
     if live_anchor_x is None or live_anchor_y is None:
         NORMALIZER_LOGGER.warning("Primary reference blueprint layout Anchor component not matched. Using absolute scaling matrix.")
         live_anchor_x = anchor_cfg["absolute_x"]
         live_anchor_y = anchor_cfg["absolute_y"]
 
-    # Step 2: Cross-reference expected layout objects against live component tracking arrays
-    DISTANCE_TOLERANCE = 35.0  # Maximum pixel shift threshold allocation distance limit
-    AREA_TOLERANCE = 0.25      # Maximum bounding box layout volume expansion margin allowance limit
+    DISTANCE_TOLERANCE = 35.0 
+    AREA_TOLERANCE = 0.25 
 
     for component_id, expected in expected_components.items():
-        # Extrapolate ideal absolute canvas pixel positions using anchor vector math metrics
         target_absolute_x = live_anchor_x + expected["vector_x"]
         target_absolute_y = live_anchor_y + expected["vector_y"]
 
@@ -262,7 +251,6 @@ def normalize_ai_output(
                     closest_distance = dist
                     matched_candidate = live_item
 
-        # Step 3: Run programmatic logic gating layers to identify layout variances
         defect_status = "Intact"
         defect_type = None
 
@@ -277,7 +265,6 @@ def normalize_ai_output(
             final_w, final_h = matched_candidate["width"], matched_candidate["height"]
             confidence = matched_candidate["confidence"]
 
-            # Calculate area variance metrics to detect rotational skew problems
             expected_area = expected["w"] * expected["h"]
             detected_area = final_w * final_h
             area_drift = abs(detected_area - expected_area) / expected_area

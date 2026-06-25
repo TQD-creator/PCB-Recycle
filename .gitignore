@@ -47,4 +47,10 @@ push_to_github.ps1
 push_to_github.sh
 repomix-output.xml
 #UN-Remove when repomix
-Mobile_app_deploy/frontend/screens/ScannerScreen.js
+#Mobile_app_deploy/frontend/screens/ScannerScreen.js
+#Trash_bin
+PCB_Recycle_System/
+Deploy_Debug/
+Model_pipeline/
+Packing_process/
+Test_Eva/
