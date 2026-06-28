@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import { resolveAnomalyApi } from '../services/C:\Users\Lenovo\Documents\Foxconn\PCB-Detection\Mobile_app_deploy\frontend\services\scanService.js'; // Adjust path as needed
+
 import {
     enqueuePendingUpload,
     flushPendingUploads,
@@ -91,17 +93,27 @@ export const useScanStore = create((set, get) => ({
         return taskIds;
     },
 
-    decideAnomaly: async ({ baseUrl, taskId, anomalyIndex, decision, approvedClass }) => {
-        const response = await resolveAnomaly(baseUrl, {
+// Inside your Zustand create() function:
+decideAnomaly: async ({ baseUrl, taskId, anomalyIndex, decision, approvedClass }) => {
+    try {
+        // 1. Send the decision to FastAPI -> Celery -> FAISS
+        const response = await resolveAnomalyApi(baseUrl, {
             task_id: taskId,
             anomaly_index: anomalyIndex,
-            decision,
+            decision: decision, // "ACCEPT" or "REJECT"
             approved_class: approvedClass,
         });
 
-        const queue = [...get().triageQueue];
-        const nextQueue = queue.filter((item) => item.anomaly_index !== anomalyIndex);
-        set({ triageQueue: nextQueue });
+        // 2. Remove the processed anomaly from the local UI instantly
+        set((state) => ({
+            triageQueue: state.triageQueue.filter((item) => item.anomaly_index !== anomalyIndex)
+        }));
+
         return response;
-    },
+    } catch (error) {
+        console.error("Anomaly Resolution Error:", error);
+        throw error;
+    }
+},
+
 }));

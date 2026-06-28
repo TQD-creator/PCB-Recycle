@@ -21,7 +21,8 @@ services:
     environment:
       REDIS_URL: redis://redis:6379/0
       RESULT_BACKEND_URL: redis://redis:6379/1
-      API_BASE_URL: http://localhost:8000
+      # CRITICAL: Change this to your laptop's Wi-Fi IP, NOT localhost
+      API_BASE_URL: http://192.168.1.100:8000 
       WEIGHTS_YOLO_PATH: /app/runtime/assets/weights/yolov8_factory_best.pt
       WEIGHTS_MOBILENET_PATH: /app/runtime/assets/weights/mobilenet_best.pt
       FAISS_INDEX_PATH: /app/runtime/assets/database/golden_anchors.index
@@ -40,11 +41,13 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: pcb-worker
-    command: celery -A celery_worker.celery_app worker --loglevel=INFO --concurrency=2
+    # CRITICAL: Concurrency locked to 1 to protect your 16GB RAM
+    command: celery -A celery_worker.celery_app worker --loglevel=INFO --concurrency=1
     environment:
       REDIS_URL: redis://redis:6379/0
       RESULT_BACKEND_URL: redis://redis:6379/1
-      API_BASE_URL: http://localhost:8000
+      # CRITICAL: Change this to your laptop's Wi-Fi IP, NOT localhost
+      API_BASE_URL: http://192.168.1.100:8000
       WEIGHTS_YOLO_PATH: /app/runtime/assets/weights/yolov8_factory_best.pt
       WEIGHTS_MOBILENET_PATH: /app/runtime/assets/weights/mobilenet_best.pt
       FAISS_INDEX_PATH: /app/runtime/assets/database/golden_anchors.index

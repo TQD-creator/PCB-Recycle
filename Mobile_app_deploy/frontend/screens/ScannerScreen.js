@@ -37,6 +37,8 @@ const ScannerScreen = () => {
 
     const baseUrl = buildBaseUrl(backendIp);
 
+    // This hook will automatically connect to ws://.../api/v2/scan/ws/status/{taskId}
+    // exactly as we configured in the FastAPI main.py
     useScanSocket(baseUrl, taskId);
 
     useEffect(() => {
@@ -46,10 +48,11 @@ const ScannerScreen = () => {
     }, [baseUrl, syncPendingScans]);
 
     const prepareImage = async (uri) => {
+        // High quality preservation for the AI Engine
         const transformed = await ImageManipulator.manipulateAsync(
             uri,
-            [{ resize: { width: 1600 } }],
-            { compress: 0.72, format: ImageManipulator.SaveFormat.JPEG }
+            [{ resize: { width: 1600 } }], // Keeps pixel density high for SAHI
+            { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
         );
         return transformed.uri;
     };
@@ -60,24 +63,24 @@ const ScannerScreen = () => {
             return;
         }
 
+        // We reset the UI before triggering a new upload
+        resetScan(); 
+
         const task = await uploadAndQueueScan({ baseUrl, imageUri });
         if (!task) {
-            Alert.alert("Queued Offline", "Image cached locally. Upload will retry automatically.");
+            Alert.alert("Queued Offline", "Network unreachable. Image cached locally and will upload automatically when connection is restored.");
         }
     };
 
     const takePhoto = async () => {
-        if (!cameraRef.current) {
-            return;
-        }
-
+        if (!cameraRef.current) return;
         try {
-            const photo = await cameraRef.current.takePictureAsync({ quality: 0.9, skipProcessing: true });
+            const photo = await cameraRef.current.takePictureAsync({ quality: 1, skipProcessing: true });
             const prepared = await prepareImage(photo.uri);
             setCapturedUri(prepared);
             await triggerUpload(prepared);
         } catch (e) {
-            Alert.alert("Capture Failed", "Could not capture image.");
+            Alert.alert("Capture Failed", "Could not capture image from device hardware.");
         }
     };
 
@@ -88,16 +91,14 @@ const ScannerScreen = () => {
             quality: 1,
         });
 
-        if (picked.canceled) {
-            return;
-        }
+        if (picked.canceled) return;
 
         try {
             const prepared = await prepareImage(picked.assets[0].uri);
             setCapturedUri(prepared);
             await triggerUpload(prepared);
         } catch (e) {
-            Alert.alert("Import Failed", "Could not prepare selected image.");
+            Alert.alert("Import Failed", "Could not process selected image.");
         }
     };
 
@@ -120,7 +121,8 @@ const ScannerScreen = () => {
         );
     }
 
-    const showProgress = scanState !== "IDLE" && scanState !== "COMPLETED" && scanState !== "FAILED";
+    // Modernized UI state logic based on our updated ScanState enum
+    const showProgress = scanState === "QUEUED" || scanState === "PROCESSING";
 
     return (
         <View style={styles.container}>
@@ -134,7 +136,7 @@ const ScannerScreen = () => {
                     autoCapitalize="none"
                 />
                 <TouchableOpacity style={styles.saveButton} onPress={() => setBackendIp(backendDraft)}>
-                    <Text style={styles.saveText}>Save</Text>
+                    <Text style={styles.saveText}>Set Gateway</Text>
                 </TouchableOpacity>
             </View>
 
@@ -142,11 +144,16 @@ const ScannerScreen = () => {
                 <View style={styles.progressCard}>
                     <Text style={styles.progressTitle}>Pipeline Running</Text>
                     <Text style={styles.progressStage}>{stage}</Text>
-                    <Text style={styles.socketState}>Socket: {socketState}</Text>
-                    <View style={styles.progressTrack}>
-                        <View style={[styles.progressFill, { width: `${Math.max(progress, 5)}%` }]} />
+                    
+                    <View style={styles.socketRow}>
+                        <View style={[styles.socketIndicator, { backgroundColor: socketState === "Connected" ? "#10B981" : "#F59E0B" }]} />
+                        <Text style={styles.socketState}>Telemetry: {socketState}</Text>
                     </View>
-                    <Text style={styles.progressMeta}>Task: {taskId || "N/A"}</Text>
+
+                    <View style={styles.progressTrack}>
+                        <View style={[styles.progressFill, { width: `${Math.max(progress, 2)}%` }]} />
+                    </View>
+                    <Text style={styles.progressMeta}>Job ID: {taskId || "Allocating..."}</Text>
                 </View>
             ) : (
                 <>
@@ -156,10 +163,10 @@ const ScannerScreen = () => {
 
                     <View style={styles.actions}>
                         <TouchableOpacity style={styles.secondaryButton} onPress={pickPhoto}>
-                            <Text style={styles.secondaryText}>Import Image</Text>
+                            <Text style={styles.secondaryText}>Import</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.primaryButton} onPress={takePhoto}>
-                            <Text style={styles.primaryText}>Capture & Upload</Text>
+                            <Text style={styles.primaryText}>Capture & Analyze</Text>
                         </TouchableOpacity>
                     </View>
                 </>
@@ -167,9 +174,10 @@ const ScannerScreen = () => {
 
             {scanState === "COMPLETED" && (
                 <View style={styles.resultCard}>
-                    <Text style={styles.resultText}>Scan completed. Open Inventory and Triage tabs.</Text>
-                    <TouchableOpacity style={styles.secondaryButton} onPress={resetScan}>
-                        <Text style={styles.secondaryText}>Start New Scan</Text>
+                    <Text style={styles.successText}>✓ Verification Complete</Text>
+                    <Text style={styles.resultText}>Check the Inventory tab for verified components and the Triage tab for anomalies.</Text>
+                    <TouchableOpacity style={styles.secondaryButton} onPress={() => { resetScan(); setCapturedUri(null); }}>
+                        <Text style={styles.secondaryText}>Clear Screen</Text>
                     </TouchableOpacity>
                 </View>
             )}
@@ -178,7 +186,11 @@ const ScannerScreen = () => {
                 <Image source={{ uri: capturedUri }} style={styles.preview} resizeMode="cover" />
             )}
 
-            {(error || socketError) && <Text style={styles.errorText}>{error || socketError}</Text>}
+            {(error || socketError) && (
+                <View style={styles.errorBox}>
+                    <Text style={styles.errorText}>⚠ {error || socketError}</Text>
+                </View>
+            )}
         </View>
     );
 };
@@ -187,7 +199,7 @@ const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: "#0A1118", padding: 12 },
     centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#0A1118", padding: 20 },
     warning: { color: "#CBD5E1", textAlign: "center", marginBottom: 14 },
-    backendRow: { flexDirection: "row", gap: 8, marginBottom: 10 },
+    backendRow: { flexDirection: "row", gap: 8, marginBottom: 10, marginTop: 40 },
     input: {
         flex: 1,
         borderRadius: 12,
@@ -205,13 +217,13 @@ const styles = StyleSheet.create({
         justifyContent: "center",
     },
     saveText: { color: "#F9FAFB", fontWeight: "700" },
-    camera: { flex: 1, borderRadius: 14, overflow: "hidden" },
+    camera: { flex: 1, borderRadius: 14, overflow: "hidden", borderWidth: 1, borderColor: '#223243' },
     actions: { flexDirection: "row", gap: 10, marginTop: 10 },
     primaryButton: {
-        flex: 1,
+        flex: 2,
         borderRadius: 12,
         backgroundColor: "#10B981",
-        paddingVertical: 14,
+        paddingVertical: 16,
         alignItems: "center",
     },
     secondaryButton: {
@@ -220,49 +232,61 @@ const styles = StyleSheet.create({
         borderColor: "#334155",
         borderWidth: 1,
         backgroundColor: "#111827",
-        paddingVertical: 14,
+        paddingVertical: 16,
         alignItems: "center",
+        justifyContent: "center"
     },
-    primaryText: { color: "#042F2E", fontWeight: "800" },
-    secondaryText: { color: "#E2E8F0", fontWeight: "700" },
+    primaryText: { color: "#042F2E", fontWeight: "800", fontSize: 16 },
+    secondaryText: { color: "#E2E8F0", fontWeight: "700", fontSize: 16 },
     progressCard: {
         borderRadius: 14,
         backgroundColor: "#111827",
         borderWidth: 1,
         borderColor: "#223243",
-        padding: 16,
+        padding: 20,
         marginTop: 16,
     },
-    progressTitle: { color: "#F8FAFC", fontWeight: "700", fontSize: 18 },
-    progressStage: { color: "#93C5FD", marginTop: 6, marginBottom: 12 },
-    socketState: { color: "#A7F3D0", marginBottom: 10, fontSize: 12 },
+    progressTitle: { color: "#F8FAFC", fontWeight: "700", fontSize: 20 },
+    progressStage: { color: "#93C5FD", marginTop: 8, marginBottom: 16, fontSize: 16 },
+    socketRow: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
+    socketIndicator: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
+    socketState: { color: "#A7F3D0", fontSize: 12 },
     progressTrack: {
-        height: 10,
+        height: 12,
         borderRadius: 20,
         backgroundColor: "#1E293B",
         overflow: "hidden",
     },
     progressFill: { height: "100%", backgroundColor: "#10B981" },
-    progressMeta: { color: "#94A3B8", marginTop: 10, fontSize: 12 },
+    progressMeta: { color: "#94A3B8", marginTop: 12, fontSize: 12, fontFamily: 'monospace' },
     resultCard: {
         marginTop: 12,
         borderRadius: 12,
-        backgroundColor: "#0F172A",
-        borderColor: "#1E293B",
+        backgroundColor: "#064E3B",
+        borderColor: "#059669",
         borderWidth: 1,
-        padding: 12,
-        gap: 10,
+        padding: 16,
+        gap: 12,
     },
-    resultText: { color: "#E2E8F0" },
+    successText: { color: "#A7F3D0", fontWeight: "bold", fontSize: 18 },
+    resultText: { color: "#ECFDF5", lineHeight: 20 },
     preview: {
-        marginTop: 10,
+        marginTop: 12,
         width: "100%",
-        height: 110,
-        borderRadius: 10,
+        height: 140,
+        borderRadius: 12,
         borderWidth: 1,
         borderColor: "#223243",
     },
-    errorText: { color: "#FCA5A5", marginTop: 8 },
+    errorBox: {
+        marginTop: 12,
+        padding: 12,
+        backgroundColor: "#7F1D1D",
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: "#B91C1C"
+    },
+    errorText: { color: "#FECACA", fontWeight: "600" },
 });
 
 export default ScannerScreen;

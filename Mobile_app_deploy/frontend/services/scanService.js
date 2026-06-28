@@ -81,3 +81,20 @@ export const resolveAnomaly = async (baseUrl, payload) => {
     const response = await client.post("/api/v2/anchors/resolve", payload);
     return response.data;
 };
+export const resolveAnomalyApi = async (baseUrl, payload) => {
+    // payload should look like: { task_id, anomaly_index, decision, approved_class }
+    const response = await fetch(`${baseUrl}/api/v2/anchors/resolve`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || "Failed to resolve anomaly via API.");
+    }
+
+    return await response.json();
+}
