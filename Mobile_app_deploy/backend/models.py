@@ -68,3 +68,33 @@ class ResolveAnchorResponse(BaseModel):
     anomaly_index: int
     decision: ResolveDecision
     message: str
+
+
+class CorrectionBox(BaseModel):
+    bbox: List[int] = Field(..., min_length=4, max_length=4)
+    label: Optional[str] = ""
+    action: str  # "ADD" | "RELABEL" | "RELABEL_VERIFIED" | "DELETE_VERIFIED"
+    anomaly_index: Optional[int] = None
+    component_index: Optional[int] = None
+
+
+class SubmitCorrectionRequest(BaseModel):
+    task_id: str
+    image_url: Optional[str] = None
+    corrections: List[CorrectionBox]
+
+
+class ReviewCorrectionRequest(BaseModel):
+    action: str  # "APPROVE" or "REJECT"
+    reviewer_note: Optional[str] = None
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class AuthResponse(BaseModel):
+    token: str
+    role: str
+    username: str

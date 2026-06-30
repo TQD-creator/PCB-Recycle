@@ -76,25 +76,52 @@ export const uploadScan = async (baseUrl, imageUri) => {
     return response.data;
 };
 
+export const loginUser = async (baseUrl, { username, password }) => {
+    const client = createApiClient(baseUrl);
+    const response = await client.post("/api/v2/auth/login", { username, password });
+    return response.data;
+};
+
+export const logoutUser = async (baseUrl) => {
+    const client = createApiClient(baseUrl);
+    await client.post("/api/v2/auth/logout");
+};
+
+export const getAuthMe = async (baseUrl) => {
+    const client = createApiClient(baseUrl);
+    const response = await client.get("/api/v2/auth/me");
+    return response.data;
+};
+
+export const fetchScanStatus = async (baseUrl, taskId) => {
+    const client = createApiClient(baseUrl);
+    const response = await client.get(`/api/v2/scan/status/${taskId}`);
+    return response.data;
+};
+
 export const resolveAnomaly = async (baseUrl, payload) => {
     const client = createApiClient(baseUrl);
     const response = await client.post("/api/v2/anchors/resolve", payload);
     return response.data;
 };
-export const resolveAnomalyApi = async (baseUrl, payload) => {
-    // payload should look like: { task_id, anomaly_index, decision, approved_class }
-    const response = await fetch(`${baseUrl}/api/v2/anchors/resolve`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
+
+export const submitCorrection = async (baseUrl, payload) => {
+    const client = createApiClient(baseUrl);
+    const response = await client.post("/api/v2/corrections/submit", payload);
+    return response.data;
+};
+
+export const fetchCorrections = async (baseUrl) => {
+    const client = createApiClient(baseUrl);
+    const response = await client.get("/api/v2/corrections");
+    return response.data;
+};
+
+export const reviewCorrection = async (baseUrl, correctionId, action, reviewerNote = null) => {
+    const client = createApiClient(baseUrl);
+    const response = await client.post(`/api/v2/corrections/${correctionId}/review`, {
+        action,
+        reviewer_note: reviewerNote,
     });
-
-    if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.detail || "Failed to resolve anomaly via API.");
-    }
-
-    return await response.json();
-}
+    return response.data;
+};

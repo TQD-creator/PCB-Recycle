@@ -30,75 +30,35 @@ def save_uploaded_file(upload_file: UploadFile) -> str:
     return str(destination.resolve())
 
 
-def generate_excel(scan_id: str) -> str:
-    """Export normalized results for a scan into a formatted Excel file."""
+def generate_excel(task_id: str) -> str:
+    """Export scan results into a formatted Excel file."""
     EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
     with get_db_connection() as connection:
-        scan_row = connection.execute(
-            "SELECT scan_id, scan_mode FROM scans WHERE scan_id = ?",
-            (scan_id,),
-        ).fetchone()
         rows = connection.execute(
-            """
-            SELECT
-                scan_id,
-                source_model,
-                class_label,
-                defect_status,
-                defect_type,
-                confidence_score,
-                bounding_box_x,
-                bounding_box_y,
-                box_width,
-                box_height
-            FROM normalized_results
-            WHERE scan_id = ?
-            """,
-            (scan_id,),
+            "SELECT task_id, status, predicted_class, faiss_distance, bbox FROM components WHERE task_id = ?",
+            (task_id,),
         ).fetchall()
 
     data = [dict(row) for row in rows]
-    dataframe = pd.DataFrame(data)
+    dataframe = pd.DataFrame(data) if data else pd.DataFrame(
+        columns=["task_id", "status", "predicted_class", "faiss_distance", "bbox"]
+    )
     dataframe.rename(
         columns={
-            "scan_id": "Scan_ID",
-            "source_model": "Source_Model",
-            "class_label": "Component_Class",
-            "defect_status": "Defect_Status",
-            "defect_type": "Defect_Type",
-            "confidence_score": "Confidence",
-            "bounding_box_x": "X_Center",
-            "bounding_box_y": "Y_Center",
-            "box_width": "Width",
-            "box_height": "Height",
+            "task_id": "Task_ID",
+            "status": "Status",
+            "predicted_class": "Component_Class",
+            "faiss_distance": "FAISS_Distance",
+            "bbox": "Bounding_Box",
         },
         inplace=True,
     )
 
-    column_order = [
-        "Scan_ID",
-        "Source_Model",
-        "Component_Class",
-        "Defect_Status",
-        "Defect_Type",
-        "Confidence",
-        "X_Center",
-        "Y_Center",
-        "Width",
-        "Height",
-    ]
-
-    for column in column_order:
-        if column not in dataframe.columns:
-            dataframe[column] = None
-
-    if scan_row and scan_row["scan_mode"] == "YOLO_ONLY":
-        dataframe["Defect_Status"] = "Not Inspected"
-
+    column_order = ["Task_ID", "Status", "Component_Class", "FAISS_Distance", "Bounding_Box"]
     dataframe = dataframe[column_order].fillna("N/A")
 
-    export_path = EXPORTS_DIR / f"inventory_{scan_id}.xlsx"
+    export_path = EXPORTS_DIR / f"inventory_{task_id}.xlsx"
     with pd.ExcelWriter(export_path, engine="openpyxl") as writer:
         dataframe.to_excel(writer, index=False, sheet_name="Results")
         worksheet = writer.sheets["Results"]

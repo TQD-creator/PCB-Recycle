@@ -37,22 +37,33 @@ __pycache__/
 Trash_dump/
 Visual_Audit_Output/
 File_anh/
+.claude
 # md files
 CHANGELOG.md
 README.md
 GITHUB_UPDATE_GUIDE.md
 To_Do_Plan.md
 Gemini.md
+DOCKER_GUIDE.md
+runbook.md
 
 # Git
 push_to_github.ps1
 push_to_github.sh
 repomix-output.xml
+Mobile_app_deploy/docker-compose.yml
+Mobile_app_deploy/backend/.dockerignore
 #UN-Remove when repomix
+Mobile_app_deploy/backend/config.py
 #Mobile_app_deploy/frontend/screens/ScannerScreen.js
+Mobile_app_deploy/backend/runtime/
 #Trash_bin
 PCB_Recycle_System/
 Deploy_Debug/
 Model_pipeline/
 Packing_process/
 Test_Eva/
+#REPORT
+Report_info/benchmark_results/
+report_info/schema_diagram.png
+#192.168.0.101:8000

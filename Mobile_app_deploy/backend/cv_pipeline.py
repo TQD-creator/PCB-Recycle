@@ -181,6 +181,8 @@ def run_scan_pipeline(task_id: str, image_path: str, progress_cb) -> Tuple[Inven
             cv2.imwrite(str(crop_file), cv2.cvtColor(item["crop"], cv2.COLOR_RGB2BGR))
             triage_items.append(TriageItem(anomaly_index=len(report.anomaly_queue)-1, crop_url=f"{API_BASE_URL}/triage-crops/{crop_file.name}", record=record))
 
+    return report, triage_items, f"{API_BASE_URL}/uploads/{Path(image_path).name}"
+
 def resolve_anomaly(task_id: str, anomaly_index: int, decision: str, approved_class: str | None) -> str:
     """Secured function to update the FAISS index in RAM and on Disk."""
     if decision == "REJECT":
@@ -212,4 +214,3 @@ def resolve_anomaly(task_id: str, anomaly_index: int, decision: str, approved_cl
         np.save(str(FAISS_LABELS_PATH), runtime.anchor_labels)
 
     return f"Anomaly {anomaly_index} approved and embedded into golden anchors as '{label}'."
-    return report, triage_items, f"{API_BASE_URL}/uploads/{Path(image_path).name}"

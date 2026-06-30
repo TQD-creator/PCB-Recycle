@@ -1,147 +1,116 @@
-import React, { useContext, useEffect, useState } from 'react';
-import { View, StyleSheet, Alert, Dimensions, ActivityIndicator, Text } from 'react-native';
-import * as FileSystem from 'expo-file-system/legacy';
-import * as ImageManipulator from 'expo-image-manipulator'; 
-import BoundingBoxEditor from './BoundingBoxEditor'; 
-import { BackendConfigContext, buildBaseUrl } from '../BackendConfigContext';
+import React, { useContext, useEffect, useState } from "react";
+import { ActivityIndicator, Alert, Image, StyleSheet, Text, View } from "react-native";
 
-const API_BASE_URL = ""; 
+import { BackendConfigContext, buildBaseUrl } from "../BackendConfigContext";
+import { submitCorrection } from "../services/scanService";
+import { useScanStore } from "../store/useScanStore";
+import BoundingBoxEditor from "./BoundingBoxEditor";
 
-const EditorScreen = ({ route, navigation }) => {
-    // We only rely on the scanId now. We will fetch the image dynamically.
-    const { scanId } = route.params || {};
+const EditorScreen = ({ navigation }) => {
     const { backendIp } = useContext(BackendConfigContext);
-    
-    const [localImageUri, setLocalImageUri] = useState(null);
-    const [isLoading, setIsLoading] = useState(true);
+    const { imageUrl, report, taskId } = useScanStore();
+    const baseUrl = buildBaseUrl(backendIp);
 
-    const getBaseUrl = () => (backendIp ? buildBaseUrl(backendIp) : API_BASE_URL);
+    const [sourceSize, setSourceSize] = useState(null); // null = loading
+    const [submitting, setSubmitting] = useState(false);
 
-    // --- SECURE DOWNLOAD ENGINE ---
+    // Resolve image pixel dimensions so BoundingBoxEditor can scale correctly
     useEffect(() => {
-        const fetchFlattenedImage = async () => {
-            const baseUrl = getBaseUrl();
-            if (!scanId || !baseUrl) {
-                Alert.alert("Error", "Missing Scan ID or Backend API.");
+        if (!imageUrl) return;
+        Image.getSize(
+            imageUrl,
+            (w, h) => setSourceSize({ width: w, height: h }),
+            () => {
+                Alert.alert("Image Error", "Could not load board image. Check backend connection.");
                 navigation.goBack();
-                return;
             }
+        );
+    }, [imageUrl]);
 
-            try {
-                const remoteUri = `${baseUrl}/api/v2/scans/image/${scanId}`;
-                const localPath = `${FileSystem.cacheDirectory}flattened_${scanId}.jpg`;
-                
-                console.log(`[*] Downloading flattened image: ${remoteUri}`);
-                
-                // We download the image to the phone's local cache so C++ modules don't crash
-                const { uri, status } = await FileSystem.downloadAsync(remoteUri, localPath);
-                
-                if (status === 200) {
-                    setLocalImageUri(uri);
-                } else {
-                    throw new Error(`Server returned HTTP ${status}`);
-                }
-            } catch (error) {
-                console.error("[-] Download failed:", error);
-                Alert.alert("Download Error", "Failed to fetch the flattened image from the server.");
-                navigation.goBack();
-            } finally {
-                setIsLoading(false);
-            }
-        };
+    const verifiedBoxes = (report?.verified_components ?? []).map((c) => ({
+        bbox: c.bbox,
+        label: c.matched_anchor_class,
+    }));
 
-        fetchFlattenedImage();
-    }, [scanId, backendIp]);
+    const anomalyBoxes = (report?.anomaly_queue ?? []).map((c, i) => ({
+        bbox: c.bbox,
+        label: c.matched_anchor_class,
+        anomaly_index: i,
+    }));
 
-    const handleSaveToFlywheel = async (correctedBoxes) => {
+    const handleSave = async (corrections) => {
+        if (!corrections || corrections.length === 0) {
+            Alert.alert("Nothing to submit", "Modify or draw a box first.");
+            return;
+        }
+        if (!taskId) {
+            Alert.alert("Error", "No active scan task ID. Return to Scanner.");
+            return;
+        }
+
+        setSubmitting(true);
         try {
-            const baseUrl = getBaseUrl();
-            const ingestUrl = `${baseUrl}/api/v2/flywheel/ingest`;
-            
-            console.log("\n[!] ================= FLYWHEEL UPLOAD INITIATED ================= [!]");
-            console.log(`[*] Target URL: ${ingestUrl}`);
-            
-            console.log("[*] Transcoding image to standard JPEG...");
-            const transcodeResult = await ImageManipulator.manipulateAsync(
-                localImageUri, // Use the perfectly flattened image we just downloaded
-                [], 
-                { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
-            );
-            const safeJpegUri = transcodeResult.uri;
-            console.log("[*] Transcoding complete.");
-
-            const screenWidth = Dimensions.get('window').width;
-            const screenHeight = Dimensions.get('window').height;
-
-            const uploadResult = await FileSystem.uploadAsync(ingestUrl, safeJpegUri, {
-                httpMethod: 'POST',
-                uploadType: 1, 
-                fieldName: 'file',
-                mimeType: 'image/jpeg',
-                parameters: {
-                    boxes: JSON.stringify(correctedBoxes),
-                    screen_width: screenWidth.toString(),
-                    screen_height: screenHeight.toString()
-                }
+            const result = await submitCorrection(baseUrl, {
+                task_id: taskId,
+                image_url: imageUrl,
+                corrections,
             });
-
-            const responseData = JSON.parse(uploadResult.body);
-
-            if (uploadResult.status === 200 && responseData.status === "success") {
-                console.log("[+] SUCCESS: Standard JPEG payload delivered flawlessly.");
-                Alert.alert(
-                    "Flywheel Updated", 
-                    "The AI has received your corrections and added them to the staging queue.",
-                    [{ text: "OK", onPress: () => navigation.goBack() }]
-                );
-            } else {
-                console.error("[-] SERVER REJECTED PAYLOAD:", responseData);
-                Alert.alert("Server Error", responseData.detail || "The server rejected the data.");
-            }
-        } catch (error) {
-            console.error("[-] CRITICAL NETWORK FAILURE:", error.message);
-            Alert.alert("Network Error", `Could not reach backend: ${error.message}`);
+            Alert.alert(
+                "Submitted",
+                `${result.count} correction${result.count !== 1 ? "s" : ""} saved with status PENDING.\n\nAn administrator can approve or reject them from the corrections queue.`,
+                [{ text: "OK", onPress: () => navigation.goBack() }]
+            );
+        } catch (err) {
+            Alert.alert("Submission Failed", "Could not reach backend. Try again.");
+        } finally {
+            setSubmitting(false);
         }
     };
 
-    // Render a loading screen while the 1000x1000 image is downloaded
-    if (isLoading) {
+    // ── Guard states ─────────────────────────────────────────────────────────
+    if (!imageUrl || !report) {
         return (
-            <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#00E676" />
-                <Text style={styles.loadingText}>Fetching Flattened PCB...</Text>
+            <View style={styles.center}>
+                <Text style={styles.warn}>No scan loaded.</Text>
+                <Text style={styles.hint}>Complete a scan first, then return here.</Text>
+            </View>
+        );
+    }
+
+    if (!sourceSize) {
+        return (
+            <View style={styles.center}>
+                <ActivityIndicator size="large" color="#10B981" />
+                <Text style={styles.hint}>Loading board image…</Text>
+            </View>
+        );
+    }
+
+    if (submitting) {
+        return (
+            <View style={styles.center}>
+                <ActivityIndicator size="large" color="#10B981" />
+                <Text style={styles.hint}>Submitting corrections…</Text>
             </View>
         );
     }
 
     return (
-        <View style={styles.container}>
-            <BoundingBoxEditor 
-                imageUri={localImageUri} 
-                onSave={handleSaveToFlywheel} 
-            />
-        </View>
+        <BoundingBoxEditor
+            imageUri={imageUrl}
+            sourceWidth={sourceSize.width}
+            sourceHeight={sourceSize.height}
+            verifiedBoxes={verifiedBoxes}
+            anomalyBoxes={anomalyBoxes}
+            onSave={handleSave}
+        />
     );
 };
 
 const styles = StyleSheet.create({
-    container: { 
-        flex: 1, 
-        backgroundColor: '#121212' 
-    },
-    loadingContainer: { 
-        flex: 1, 
-        backgroundColor: '#121212', 
-        justifyContent: 'center', 
-        alignItems: 'center' 
-    },
-    loadingText: { 
-        color: '#00E676', 
-        marginTop: 16, 
-        fontFamily: 'Georgia', 
-        fontSize: 16,
-        fontWeight: 'bold'
-    }
+    center: { flex: 1, backgroundColor: "#0A1118", alignItems: "center", justifyContent: "center", gap: 12 },
+    warn: { color: "#F8FAFC", fontSize: 18, fontWeight: "800" },
+    hint: { color: "#94A3B8", fontSize: 14, textAlign: "center", paddingHorizontal: 32 },
 });
 
 export default EditorScreen;
