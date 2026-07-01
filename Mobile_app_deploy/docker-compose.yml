@@ -21,7 +21,18 @@ services:
       RESULT_BACKEND_URL: redis://redis:6379/1
       # CRITICAL: Change this to your laptop's Wi-Fi IP, NOT localhost
       API_BASE_URL: http://172.20.10.13:8000
-      WEIGHTS_YOLO_PATH: /app/runtime/assets/weights/FINAL_BEST_YOLO_SAHI.pt
+
+      # ── YOLO weight — uncomment exactly ONE option ──────────────────────
+      # Option A: FP32 PyTorch (default, file path)
+      WEIGHTS_YOLO_PATH: /app/runtime/assets/weights/YOLOv8s_HighRes_SAHI_best.pt
+      # Option B: INT8 ONNX (file path; verify dets > 0 before use)
+      # WEIGHTS_YOLO_PATH: /app/runtime/assets/weights/high_res_p2_int8.onnx
+      # Option C: OpenVINO FP16 (DIRECTORY path; imgsz locked to 640)
+      # WEIGHTS_YOLO_PATH: /app/runtime/assets/weights/high_res_openvino_fp16
+      # Option D: OpenVINO INT8 (DIRECTORY path; imgsz locked to 640)
+      # WEIGHTS_YOLO_PATH: /app/runtime/assets/weights/high_res_openvino_int8
+      # ────────────────────────────────────────────────────────────────────
+
       WEIGHTS_MOBILENET_PATH: /app/runtime/assets/weights/mobilenet_best.pt
       FAISS_INDEX_PATH: /app/runtime/assets/database/golden_anchors.index
       FAISS_LABELS_PATH: /app/runtime/assets/database/anchor_labels.npy
@@ -47,7 +58,18 @@ services:
       RESULT_BACKEND_URL: redis://redis:6379/1
       # CRITICAL: Change this to your laptop's Wi-Fi IP, NOT localhost
       API_BASE_URL: http://172.20.10.13:8000
-      WEIGHTS_YOLO_PATH: /app/runtime/assets/weights/FINAL_BEST_YOLO_SAHI.pt
+
+      # ── YOLO weight — keep in sync with the api service above ──────────
+      # Option A: FP32 PyTorch (default, file path)
+      WEIGHTS_YOLO_PATH: /app/runtime/assets/weights/YOLOv8s_HighRes_SAHI_best.pt
+      # Option B: INT8 ONNX (file path; verify dets > 0 before use)
+      # WEIGHTS_YOLO_PATH: /app/runtime/assets/weights/high_res_p2_int8.onnx
+      # Option C: OpenVINO FP16 (DIRECTORY path; imgsz locked to 640)
+      # WEIGHTS_YOLO_PATH: /app/runtime/assets/weights/high_res_openvino_fp16
+      # Option D: OpenVINO INT8 (DIRECTORY path; imgsz locked to 640)
+      # WEIGHTS_YOLO_PATH: /app/runtime/assets/weights/high_res_openvino_int8
+      # ────────────────────────────────────────────────────────────────────
+
       WEIGHTS_MOBILENET_PATH: /app/runtime/assets/weights/mobilenet_best.pt
       FAISS_INDEX_PATH: /app/runtime/assets/database/golden_anchors.index
       FAISS_LABELS_PATH: /app/runtime/assets/database/anchor_labels.npy

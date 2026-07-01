@@ -119,8 +119,8 @@ def run_scan_pipeline(task_id: str, image_path: str, progress_cb) -> Tuple[Inven
     slicing = get_sliced_prediction(
         image_path,
         detection_model=runtime.detector,
-        slice_height=512,
-        slice_width=512,
+        slice_height=640,
+        slice_width=640,
         overlap_height_ratio=0.2,
         overlap_width_ratio=0.2,
     )

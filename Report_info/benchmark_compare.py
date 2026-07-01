@@ -74,7 +74,7 @@ FAISS_THRESHOLDS = {
     "diode": 0.40, "led": 0.40, "inductor": 0.40,
 }
 
-SAHI_SLICE      = 512
+SAHI_SLICE      = 640
 SAHI_OVERLAP    = 0.2
 HIGHRES_WIDTH   = 1600
 YOLO_CONF       = 0.10

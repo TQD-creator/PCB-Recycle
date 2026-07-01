@@ -12,6 +12,7 @@ sahi==0.11.21
 ultralytics==8.3.23
 uvicorn[standard]==0.30.6
 onnxruntime>=1.15.0
+openvino>=2024.0.0          # OpenVINO runtime — required when using openvino_fp16 / openvino_int8 weight dirs
 pandas>=2.0.0
 openpyxl>=3.1.0
 
